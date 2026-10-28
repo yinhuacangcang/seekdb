@@ -37,6 +37,8 @@ public:
                                 int64_t param_num,
                                 common::ObExprTypeCtx &type_ctx) const override;
   static int eval_ai_embed(const ObExpr &expr, ObEvalCtx &ctx, ObDatum &res);
+  static int eval_ai_embed_batch(const ObExpr &expr, ObEvalCtx &ctx,
+                                 const ObBitVector &skip, const int64_t batch_size);
   virtual int cg_expr(ObExprCGCtx &expr_cg_ctx, 
                       const ObRawExpr &raw_expr,
                       ObExpr &rt_expr) const override;
@@ -45,6 +47,24 @@ private:
   static constexpr int MODEL_IDX = 0;
   static constexpr int CONTENT_IDX = 1;
   static constexpr int DIM_IDX = 2;
+  static int read_arg_string(ObEvalCtx &ctx, common::ObIAllocator &allocator,
+                             const ObExpr &expr, const int64_t arg_idx,
+                             ObDatum &datum, common::ObString &str);
+  static int check_dimension(const int64_t dimension);
+  static int build_embed_config(common::ObIAllocator &allocator, const int64_t dimension,
+                                common::ObJsonObject *&config);
+  static int eval_ai_embed_batch_request(const ObExpr &expr, ObEvalCtx &ctx,
+                                         common::ObIAllocator &allocator,
+                                         const common::ObString &model_id,
+                                         const int64_t dimension,
+                                         common::ObArray<common::ObString> &contents,
+                                         common::ObArray<common::ObString> &result_strs);
+  static int eval_ai_embed_single_request(const ObExpr &expr, ObEvalCtx &ctx,
+                                          common::ObIAllocator &allocator,
+                                          const common::ObString &model_id,
+                                          const common::ObString &content,
+                                          const int64_t dimension,
+                                          common::ObString &result);
   DISALLOW_COPY_AND_ASSIGN(ObExprAIEmbed);
 };
 

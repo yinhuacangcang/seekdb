@@ -32,6 +32,18 @@ using namespace oceanbase::common;
 using namespace oceanbase::sqlclient;
 using namespace oceanbase::transaction;
 
+// Optional string columns may be null or empty (e.g. the access key of ollama),
+// copy them without failing the caller.
+static int copy_optional_string(ObIAllocator &allocator, const ObString &src, ObString &dst)
+{
+  int ret = OB_SUCCESS;
+  if (src.empty()) {
+    dst.reset();
+  } else if (OB_FAIL(deep_copy_ob_string(allocator, src, dst))) {
+  }
+  return ret;
+}
+
 int ObAiServiceProxy::insert_ai_endpoint(ObMySQLTransaction &trans, const int64_t new_endpoint_version, const ObAiModelEndpointInfo &endpoint)
 {
   int ret = OB_SUCCESS;
@@ -117,12 +129,22 @@ int ObAiServiceProxy::select_ai_endpoint(ObArenaAllocator &allocator, ObISQLClie
           LOG_USER_ERROR(OB_AI_FUNC_ENDPOINT_NOT_FOUND, name.length(), name.ptr());
         } else {
         }
-      } else if (OB_FAIL(build_ai_endpoint_(allocator, *result, endpoint))) {
       } else {
-        int tmp_ret = OB_SUCCESS;
-        if (OB_ITER_END != (tmp_ret = result->next())) {
-          ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("get more row than one", KR(ret), KR(tmp_ret), K(sql));
+        bool found = false;
+        while (OB_SUCC(ret) && !found) {
+          if (OB_FAIL(build_ai_endpoint_(allocator, *result, endpoint))) {
+          } else if (endpoint.get_provider().empty()) {
+            // skip version/tombstone rows that do not describe a usable endpoint
+            endpoint.reset();
+            if (OB_FAIL(result->next())) {
+              if (OB_ITER_END == ret) {
+                ret = OB_AI_FUNC_ENDPOINT_NOT_FOUND;
+                LOG_USER_ERROR(OB_AI_FUNC_ENDPOINT_NOT_FOUND, name.length(), name.ptr());
+              }
+            }
+          } else {
+            found = true;
+          }
         }
       }
     }
@@ -167,12 +189,21 @@ int ObAiServiceProxy::select_ai_endpoint_by_ai_model_name(ObArenaAllocator &allo
           ret = OB_AI_FUNC_ENDPOINT_NOT_FOUND;
         } else {
         }
-      } else if (OB_FAIL(build_ai_endpoint_(allocator, *result, endpoint))) {
       } else {
-        int tmp_ret = OB_SUCCESS;
-        if (OB_ITER_END != (tmp_ret = result->next())) {
-          ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("get more row than one", KR(ret), KR(tmp_ret), K(sql));
+        bool found = false;
+        while (OB_SUCC(ret) && !found) {
+          if (OB_FAIL(build_ai_endpoint_(allocator, *result, endpoint))) {
+          } else if (endpoint.get_provider().empty()) {
+            // skip version/tombstone rows that do not describe a usable endpoint
+            endpoint.reset();
+            if (OB_FAIL(result->next())) {
+              if (OB_ITER_END == ret) {
+                ret = OB_AI_FUNC_ENDPOINT_NOT_FOUND;
+              }
+            }
+          } else {
+            found = true;
+          }
         }
       }
     }
@@ -200,7 +231,7 @@ int ObAiServiceProxy::build_ai_endpoint_(ObArenaAllocator &allocator, ObMySQLRes
   EXTRACT_VARCHAR_FIELD_MYSQL(result, "endpoint_name", name);
   EXTRACT_VARCHAR_FIELD_MYSQL(result, "ai_model_name", ai_model_name);
   EXTRACT_VARCHAR_FIELD_MYSQL(result, "url", url);
-  EXTRACT_VARCHAR_FIELD_MYSQL(result, "access_key", access_key);
+  EXTRACT_VARCHAR_FIELD_MYSQL_WITH_DEFAULT_VALUE(result, "access_key", access_key, true, false, ""/*wont be used*/);
   EXTRACT_VARCHAR_FIELD_MYSQL_WITH_DEFAULT_VALUE(result, "provider", provider, true, false, ""/*wont be used*/);
   EXTRACT_VARCHAR_FIELD_MYSQL_WITH_DEFAULT_VALUE(result, "request_model_name", request_model_name, true, false, ""/*wont be used*/);
   EXTRACT_VARCHAR_FIELD_MYSQL_WITH_DEFAULT_VALUE(result, "parameters", arguments, true, false, ""/*wont be used*/);
@@ -208,16 +239,16 @@ int ObAiServiceProxy::build_ai_endpoint_(ObArenaAllocator &allocator, ObMySQLRes
   EXTRACT_VARCHAR_FIELD_MYSQL_WITH_DEFAULT_VALUE(result, "response_transform_fn", response_transform_fn, true, false, ""/*wont be used*/);
 
   if (OB_FAIL(ret)) {
-  } else if (OB_FAIL(deep_copy_ob_string(allocator, scope, endpoint.scope_))) {
-  } else if (OB_FAIL(deep_copy_ob_string(allocator, name, endpoint.name_))) {
-  } else if (OB_FAIL(deep_copy_ob_string(allocator, ai_model_name, endpoint.ai_model_name_))) {
-  } else if (OB_FAIL(deep_copy_ob_string(allocator, url, endpoint.url_))) {
-  } else if (OB_FAIL(deep_copy_ob_string(allocator, access_key, endpoint.access_key_))) {
-  } else if (OB_FAIL(deep_copy_ob_string(allocator, provider, endpoint.provider_))) {
-  } else if (OB_FAIL(deep_copy_ob_string(allocator, request_model_name, endpoint.request_model_name_))) {
-  } else if (OB_FAIL(deep_copy_ob_string(allocator, arguments, endpoint.parameters_))) {
-  } else if (OB_FAIL(deep_copy_ob_string(allocator, request_transform_fn, endpoint.request_transform_fn_))) {
-  } else if (OB_FAIL(deep_copy_ob_string(allocator, response_transform_fn, endpoint.response_transform_fn_))) {
+  } else if (OB_FAIL(copy_optional_string(allocator, scope, endpoint.scope_))) {
+  } else if (OB_FAIL(copy_optional_string(allocator, name, endpoint.name_))) {
+  } else if (OB_FAIL(copy_optional_string(allocator, ai_model_name, endpoint.ai_model_name_))) {
+  } else if (OB_FAIL(copy_optional_string(allocator, url, endpoint.url_))) {
+  } else if (OB_FAIL(copy_optional_string(allocator, access_key, endpoint.access_key_))) {
+  } else if (OB_FAIL(copy_optional_string(allocator, provider, endpoint.provider_))) {
+  } else if (OB_FAIL(copy_optional_string(allocator, request_model_name, endpoint.request_model_name_))) {
+  } else if (OB_FAIL(copy_optional_string(allocator, arguments, endpoint.parameters_))) {
+  } else if (OB_FAIL(copy_optional_string(allocator, request_transform_fn, endpoint.request_transform_fn_))) {
+  } else if (OB_FAIL(copy_optional_string(allocator, response_transform_fn, endpoint.response_transform_fn_))) {
   }
 
   if (OB_SUCC(ret)) {

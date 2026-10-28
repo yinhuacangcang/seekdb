@@ -20,6 +20,7 @@
 #include "ob_ai_func.h"
 #include "share/json/ob_json_helper.h"
 #include "lib/encode/ob_base64_encode.h"
+#include "lib/string/ob_string_buffer.h"
 
 namespace oceanbase 
 {
@@ -236,6 +237,7 @@ public:
   ObAIFuncJsonUtils() {}
   virtual ~ObAIFuncJsonUtils() {}
   static bool ob_is_json_array_all_str(ObJsonArray* json_array);
+  static bool is_json_number_type(const ObJsonNodeType type);
   static int transform_array_to_json_array(ObIAllocator &allocator, ObArray<ObString> &contents, ObJsonArray *&array);
   static int get_json_object(ObIAllocator &allocator, ObJsonObject *&obj_node);
   static int get_json_array(ObIAllocator &allocator, ObJsonArray *&array_node);
@@ -382,6 +384,10 @@ public:
   static constexpr char prompt_template_key[20] = "template";
   static constexpr char prompt_args_key[20] = "args";
 private:
+  static int replace_all_args_in_template(ObIAllocator &allocator, ObJsonObject *prompt_object,
+                                          ObString &replaced_prompt_str, const int64_t depth);
+  static int append_arg_value(ObIAllocator &allocator, ObJsonNode *arg_node,
+                              ObStringBuffer &result_buf, const int64_t depth);
   DISALLOW_COPY_AND_ASSIGN(ObAIFuncPromptObjectUtils);
 };
 

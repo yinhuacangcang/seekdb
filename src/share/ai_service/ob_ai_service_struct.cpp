@@ -37,7 +37,12 @@ const char *VALID_PROVIDERS[] = {
   "SILICONFLOW",
   "COHERE",
   "HUNYUAN-OPENAI",
-  "OPENAI"
+  "OPENAI",
+  "OLLAMA"
+};
+
+const char *PROVIDERS_WITHOUT_ACCESS_KEY[] = {
+  "OLLAMA"
 };
 
 #define EXTRACT_JSON_ELEM_STR(json_key, member) \
@@ -80,16 +85,30 @@ int ObAiModelEndpointInfo::deep_copy(
   int ret = OB_SUCCESS;
   reset();
   endpoint_id_ = other.endpoint_id_;
-  if (OB_FAIL(ob_write_string(allocator, other.name_, name_))) {
-  } else if (OB_FAIL(ob_write_string(allocator, other.scope_, scope_))) {
-  } else if (OB_FAIL(ob_write_string(allocator, other.ai_model_name_, ai_model_name_))) {
-  } else if (OB_FAIL(ob_write_string(allocator, other.url_, url_))) {
-  } else if (OB_FAIL(ob_write_string(allocator, other.access_key_, access_key_))) {
-  } else if (OB_FAIL(ob_write_string(allocator, other.provider_, provider_))) {
-  } else if (OB_FAIL(ob_write_string(allocator, other.request_model_name_, request_model_name_))) {
-  } else if (OB_FAIL(ob_write_string(allocator, other.parameters_, parameters_))) {
-  } else if (OB_FAIL(ob_write_string(allocator, other.request_transform_fn_, request_transform_fn_))) {
-  } else if (OB_FAIL(ob_write_string(allocator, other.response_transform_fn_, response_transform_fn_))) {
+  // optional fields may be empty (e.g. access_key of ollama), ob_write_string
+  // rejects a null string so empty values are kept empty explicitly
+  if (OB_FAIL(copy_string_or_empty(allocator, other.name_, name_))) {
+  } else if (OB_FAIL(copy_string_or_empty(allocator, other.scope_, scope_))) {
+  } else if (OB_FAIL(copy_string_or_empty(allocator, other.ai_model_name_, ai_model_name_))) {
+  } else if (OB_FAIL(copy_string_or_empty(allocator, other.url_, url_))) {
+  } else if (OB_FAIL(copy_string_or_empty(allocator, other.access_key_, access_key_))) {
+  } else if (OB_FAIL(copy_string_or_empty(allocator, other.provider_, provider_))) {
+  } else if (OB_FAIL(copy_string_or_empty(allocator, other.request_model_name_, request_model_name_))) {
+  } else if (OB_FAIL(copy_string_or_empty(allocator, other.parameters_, parameters_))) {
+  } else if (OB_FAIL(copy_string_or_empty(allocator, other.request_transform_fn_, request_transform_fn_))) {
+  } else if (OB_FAIL(copy_string_or_empty(allocator, other.response_transform_fn_, response_transform_fn_))) {
+  }
+  return ret;
+}
+
+int ObAiModelEndpointInfo::copy_string_or_empty(common::ObIAllocator &allocator,
+                                                const common::ObString &src,
+                                                common::ObString &dst)
+{
+  int ret = OB_SUCCESS;
+  if (src.empty()) {
+    dst.reset();
+  } else if (OB_FAIL(ob_write_string(allocator, src, dst))) {
   }
   return ret;
 }
@@ -112,7 +131,8 @@ int ObAiModelEndpointInfo::check_valid() const
   } else if (url_.empty()) {
     ret = OB_AI_FUNC_PARAM_EMPTY;
     LOG_USER_ERROR(OB_AI_FUNC_PARAM_EMPTY, strlen("url"), "url");
-  } else if (access_key_.empty()) {
+  } else if (access_key_.empty() && !is_access_key_optional_provider(provider_)) {
+    // providers such as ollama do not need an access key
     ret = OB_AI_FUNC_PARAM_EMPTY;
     LOG_USER_ERROR(OB_AI_FUNC_PARAM_EMPTY, strlen("access_key"), "access_key");
     LOG_WARN("access_key is empty", K(ret), K(*this));
@@ -145,6 +165,18 @@ bool ObAiModelEndpointInfo::is_valid_provider(const ObString &provider)
     }
   }
   return is_valid;
+}
+
+bool ObAiModelEndpointInfo::is_access_key_optional_provider(const ObString &provider)
+{
+  bool is_optional = false;
+  for (int i = 0; i < ARRAYSIZEOF(PROVIDERS_WITHOUT_ACCESS_KEY); i++) {
+    if (provider.case_compare(PROVIDERS_WITHOUT_ACCESS_KEY[i]) == 0) {
+      is_optional = true;
+      break;
+    }
+  }
+  return is_optional;
 }
 
 int ObAiModelEndpointInfo::merge_delta_endpoint(common::ObArenaAllocator &allocator, const ObIJsonBase &delta_jbase)
@@ -184,7 +216,10 @@ int ObAiModelEndpointInfo::merge_delta_endpoint(common::ObArenaAllocator &alloca
 int ObAiModelEndpointInfo::encrypt_access_key_(ObIAllocator &allocator, const ObString &access_key, ObString &encrypted_access_key)
 {
   int ret = OB_SUCCESS;
-  if (OB_FAIL(ob_write_string(allocator, access_key, encrypted_access_key))) {
+  if (access_key.empty()) {
+    // providers such as ollama have no access key, keep it empty instead of failing
+    encrypted_access_key.reset();
+  } else if (OB_FAIL(ob_write_string(allocator, access_key, encrypted_access_key))) {
   }
   return ret;
 }
@@ -192,7 +227,10 @@ int ObAiModelEndpointInfo::encrypt_access_key_(ObIAllocator &allocator, const Ob
 int ObAiModelEndpointInfo::decrypt_access_key_(ObIAllocator &allocator, const ObString &encrypted_access_key, ObString &unencrypted_access_key) const
 {
   int ret = OB_SUCCESS;
-  if (OB_FAIL(ob_write_string(allocator, encrypted_access_key, unencrypted_access_key))) {
+  if (encrypted_access_key.empty()) {
+    // no access key configured (e.g. ollama), hand back an empty key
+    unencrypted_access_key.reset();
+  } else if (OB_FAIL(ob_write_string(allocator, encrypted_access_key, unencrypted_access_key))) {
   }
   return ret;
 }
